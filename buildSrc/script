@@ -1,0 +1,302 @@
+#!/bin/bash
+set -e
+
+########################################################################################
+# The kotlin js compiling script
+# Author: Catten Linger
+########################################################################################
+# Credit:
+# https://stackoverflow.com/questions/69428226/how-to-compile-a-kotlin-file-to-javascript
+# Just a simple command can really help:
+# kotlinc-js src/kotlin/main.kt -module-kind commonjs -main call -output main.js
+#########################################################################################
+
+echo "Hello world!"
+
+CC="kotlinc-js"
+WORKDIR=$(pwd)
+
+LIB_DIR="$WORKDIR/lib"
+SOURCE_ROOT="$WORKDIR/src"
+BUILD_ROOT="$WORKDIR/kotlin_build"
+
+BUILDSCRIPT_DIR="$WORKDIR/buildSrc"
+BUILDSCRIPT_BUILD_DIST="$BUILD_ROOT/buildscript"
+BUILDSCRIPT_BUILD_LIB="$BUILDSCRIPT_BUILD_DIST/lib"
+BUILDSCRIPT_NAME="buildscript.kt"
+BUILDSCRIPT_OUTPUT_NAME="buildscript.js"
+UNZIP_FLAGS=" -q "
+
+#############################################
+# Helper and utils
+#############################################
+yes_or_no() {
+    while : ; do
+      echo "$1"
+      local selection
+      read -rp "[Yes/No]: " selection
+      case $selection in
+      Yes|yes|y|Y|Yup|yup)
+        eval "$2"
+        return $?
+        ;;
+      No|no|n|N|Na|na)
+        return 255
+      break
+        ;;
+      *)
+        continue
+        ;;
+      esac
+    done
+}
+
+prepare_directories() {
+  local cmd=""
+  [ ! -d "$BUILD_ROOT" ] && cmd="$cmd && mkdir -vp ""$BUILD_ROOT"" "
+  [ ! -d "$SOURCE_ROOT" ] && cmd="$cmd && mkdir -vp ""$SOURCE_ROOT"" "
+  [ ! -d "$LIB_DIR" ] && cmd="$cmd && mkdir -vp ""$LIB_DIR"" "
+
+  [ ! -d "$BUILDSCRIPT_BUILD_DIST" ] && cmd="$cmd && mkdir -vp ""$BUILDSCRIPT_BUILD_DIST"" "
+  [ ! -d "$BUILDSCRIPT_BUILD_LIB" ] && cmd="$cmd && mkdir -vp ""$BUILDSCRIPT_BUILD_LIB"" "
+
+  [ -n "$cmd" ] || eval "echo ""Preparing directories..."" $cmd"
+}
+
+require_cmd() {
+    local requirement="$1"
+    if [ -z "$(command -v "$requirement")" ]; then
+        echo "This script require '$requirement' command to run. Please install it. "
+        exit 1
+    fi
+}
+
+require_dir() {
+  local dir="$1" # target dir
+  if [ ! -d "$dir" ]; then
+    echo "Could not find required directory \'$dir\'."
+    exit 1
+  fi
+}
+
+require_file() {
+  local file="$1" # target file
+  if [ ! -f "$file" ]; then
+    echo "Could not find required file \'$file\'."
+    exit 1
+  fi
+}
+
+MAVEN_CENTRAL_URL="https://repo1.maven.org/maven2"
+repository() {
+  local location="$1"
+  if [ -z "$location" ]; then
+    echo "[!] Repository command usage: repository (maven_central | <url> )"
+    exit 1
+  fi
+  case $1 in
+    maven_central)
+      MAVEN_CENTRAL_URL="https://repo1.maven.org/maven2"
+      ;;
+    *)
+      MAVEN_CENTRAL_URL="$1"
+      ;;
+  esac
+}
+
+resolve_maven_central_package_location() {
+  local IFS=":"
+  read -ra coordinate <<< "$1" # like 'org.jetbrains.kotlin:kotlin-stdlib-js:1.6.21'
+  local organization
+  organization="$(echo """${coordinate[0]}""" | sed 's/\./\//g')"
+  local version="${coordinate[2]}"
+  local package="${coordinate[1]}"
+  echo "$MAVEN_CENTRAL_URL/$organization/$package/$version/$package-$version.jar"
+}
+
+resolve_maven_central_package_name() {
+  local IFS=":"
+  read -ra coordinate <<< "$1" # like 'org.jetbrains.kotlin:kotlin-stdlib-js:1.6.21'
+  local version="${coordinate[2]}"
+  local package="${coordinate[1]}"
+  echo "$package-$version.jar"
+}
+
+download_lib() {
+  local name="$1"
+  local package_name
+  package_name="$(resolve_maven_central_package_name "$name")"
+
+  cd "$LIB_DIR"
+  if [ ! -f "$LIB_DIR/$package_name" ]; then
+    echo "Downloading $name..."
+    curl -# -L "$(resolve_maven_central_package_location "$name")" -o "$LIB_DIR/$package_name"
+  else
+    echo "Lib ""$name"" exists."
+  fi
+}
+
+buildscript_require() {
+  local name="$1"
+  local filename
+  filename="$(resolve_maven_central_package_name "$name")"
+  local package_location="$LIB_DIR/$filename"
+  echo "Checking ""$name"" ..."
+  [ ! -f "$package_location" ] && download_lib "$1"
+  local build_lib_location="$BUILDSCRIPT_BUILD_LIB/$filename"
+  [ -d "$build_lib_location" ] && rm -rf "$build_lib_location" -v
+  mkdir -pv "$build_lib_location"
+  eval "unzip ""$UNZIP_FLAGS"" -o ""$package_location"" -d ""$build_lib_location"""
+}
+
+
+########################################
+#  Init checks
+########################################
+
+init_check_package_json() {
+  if [ ! -f "$WORKDIR/package.json" ]; then
+    yes_or_no "It seems that you haven't init the node project yet.\n Should I init for you ? "
+  fi
+}
+
+init_check_node_modules() {
+  if [ ! -d "$WORKDIR/node_modules" ]; then
+    echo "Installing dependencies..."
+    npm install -d kotlin webpack webpack-dev-server
+  fi
+}
+
+init_check_dukat() {
+  if [ -z "$(command -v dukat)" ]; then
+    echo "dukat command not found."
+    yes_or_no "'dukat' is needed for webpack api conversion. install it ?" "npm i dukat"
+    if [ $? == 255 ]; then return; fi
+  fi
+
+  echo "Preparing webpack apis."
+  local webpack_api_location="$BUILDSCRIPT_DIR/webpack"
+  [ ! -d "$webpack_api_location" ] && mkdir -vp "$webpack_api_location"
+  dukat -d "$webpack_api_location" "$BUILD_ROOT/node_modules/webpack/module.d.ts"
+}
+
+init_buildscript_dependencies() {
+  echo "Checking basic buildscript dependencies..."
+  repository maven_central
+  download_lib "org.jetbrains.kotlin:kotlin-stdlib-js:1.6.21"
+  download_lib "org.jetbrains.kotlin:kotlin-stdlib-common:1.6.21"
+  # Temporally use my own repository since it doesn't exists on maven central
+  repository "https://nexus.shinonometn.com/repository/maven-public/"
+  download_lib "org.jetbrains.kotlinx:kotlinx-nodejs:0.0.7"
+  repository maven_central
+  [ -f "$BUILDSCRIPT_DIR/dependencies.rc" ] && . "$BUILDSCRIPT_DIR/dependencies.rc"
+  echo 0
+}
+
+####################################################################################
+# Init command -- For project initialization
+####################################################################################
+init() {
+  echo "Init checks..."
+  init_check_package_json
+  init_check_node_modules
+  init_check_dukat
+
+  prepare_directories
+  init_buildscript_dependencies
+
+  local bs="$BUILDSCRIPT_DIR/$BUILDSCRIPT_NAME"
+  [ ! -f "$bs" ] || touch bs
+
+  local dependencies="$BUILDSCRIPT_DIR/dependencies.rc"
+  if [ ! -f "$dependencies" ]; then
+    echo "buildscript_require ""org.jetbrains.kotlin:kotlin-stdlib-common:1.6.21""" >> "$dependencies"
+    echo "buildscript_require ""org.jetbrains.kotlinx:kotlinx-nodejs:0.0.7""" >> "$dependencies"
+  fi
+}
+
+####################################################################################
+# Buildscript command -- For buildscript compile (or say, update)
+####################################################################################
+build_script() {
+  require_cmd unzip
+
+  echo "Start updating buildscript."
+  require_dir "$BUILDSCRIPT_DIR"
+
+  local buildscript_output_dir="$BUILD_ROOT/buildscript"
+  echo "Cleaning buildscript dir..."
+  rm -rf "$buildscript_output_dir" -v
+  mkdir -pv "$buildscript_output_dir"
+
+  echo "Resolving buildscript dependencies..."
+  local dependencies="$BUILDSCRIPT_DIR/dependencies.rc"
+  # shellcheck disable=SC1090
+  [ -f "$dependencies" ] && . "$dependencies"
+  [ ! -d "$BUILDSCRIPT_BUILD_LIB" ] && mkdir -pv "$BUILDSCRIPT_BUILD_LIB"
+#  find "$BUILDSCRIPT_BUILD_LIB" -name '*.js' -exec cp -v {} "$BUILDSCRIPT_BUILD_DIST" \;
+
+  [ -d "$buildscript_output_dir" ] || mkdir -pv "$buildscript_output_dir"
+  local buildScriptOutput="$buildscript_output_dir/$BUILDSCRIPT_OUTPUT_NAME"
+
+  echo "Start compile."
+  eval "$CC $BUILDSCRIPT_DIR -module-kind commonjs -main call -meta-info -libraries ""$BUILDSCRIPT_BUILD_LIB"" -output ""$buildScriptOutput"""
+  echo "Build script update finished."
+}
+
+####################################################################################
+# Start serve action
+####################################################################################
+serve() {
+  build_script
+  echo "Start serving..."
+  node "$BUILDSCRIPT_BUILD_DIST/$BUILDSCRIPT_OUTPUT_NAME" serve
+}
+
+####################################################################################
+# Start build action
+####################################################################################
+build() {
+  build_script
+  echo "Start building..."
+  node "$BUILDSCRIPT_BUILD_DIST/$BUILDSCRIPT_OUTPUT_NAME" build
+}
+
+####################################################################################
+# Start clean action
+####################################################################################
+
+clean() {
+  echo "Cleaning..."
+  rm -v -rf "$BUILD_ROOT"
+}
+
+####################################################################################
+# Entry
+####################################################################################
+
+require_cmd npm
+require_cmd node
+require_cmd uname
+
+case $1 in
+init)
+  init
+  ;;
+build_script)
+  build_script
+  ;;
+serve)
+  serve
+  ;;
+build)
+  build
+  ;;
+clean)
+  clean
+  ;;
+*)
+  echo "Usage: script (init|serve|build|build_script|clean)"
+  echo
+  ;;
+esac

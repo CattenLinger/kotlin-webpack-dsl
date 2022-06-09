@@ -1,0 +1,2 @@
+buildscript_require org.jetbrains.kotlin:kotlin-stdlib-common:1.6.21
+buildscript_require org.jetbrains.kotlinx:kotlinx-nodejs:0.0.7
