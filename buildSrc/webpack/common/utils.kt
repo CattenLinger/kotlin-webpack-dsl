@@ -24,7 +24,7 @@ fun jsArray(): dynamic = js("([])")
 /**
  * Create a javascript regex by given pattern
  */
-fun jsRegex(pattern: String): dynamic = js("new RegExp(pattern)")
+fun jsRegex(@Suppress("UNUSED_PARAMETER") pattern: String): dynamic = js("new RegExp(pattern)")
 
 @Suppress("UNUSED_VARIABLE")
 fun Regex.nativePattern(): dynamic {
