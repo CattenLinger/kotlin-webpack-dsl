@@ -7,7 +7,7 @@
     "serve": "./buildSrc/script serve",
     "build": "./buildSrc/script build",
     "build_script": "./buildSrc/script build_script",
-    "clean" : "./buildSrc/script clean"
+    "clean": "./buildSrc/script clean"
   },
   "author": "",
   "license": "ISC",
@@ -16,10 +16,16 @@
     "html-webpack-plugin": "^5.5.0",
     "kotlin": "^1.6.21",
     "kotlinx-nodejs-jslegacy": "^0.0.7",
+    "portfinder": "^1.0.28",
     "webpack": "^5.73.0",
     "webpack-dev-server": "^4.9.2"
   },
   "devDependencies": {
+    "chalk": "^4.1.2",
+    "copy-webpack-plugin": "^11.0.0",
+    "mini-css-extract-plugin": "^2.6.0",
+    "ora": "^1.2.0",
+    "rimraf": "^3.0.2",
     "webpack-cli": "^4.9.2",
     "webpack-merge": "^5.8.0"
   }

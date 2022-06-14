@@ -8,12 +8,13 @@ set -e
 # Credit:
 # https://stackoverflow.com/questions/69428226/how-to-compile-a-kotlin-file-to-javascript
 # Just a simple command can really help:
-# kotlinc-js src/kotlin/main.kt -module-kind commonjs -main call -output main.js
+# kotlinc-js src/kotlin/webpack.main.kt -webpack.module-kind commonjs -webpack.main call -webpack.output webpack.main.js
 #########################################################################################
 
 echo "Hello world!"
 
 CC="kotlinc-js"
+CC_BUILDSCRIPT_FLAGS="-module-kind commonjs -main call -source-map -meta-info "
 WORKDIR=$(pwd)
 
 LIB_DIR="$WORKDIR/lib"
@@ -240,7 +241,7 @@ build_script() {
   local buildScriptOutput="$buildscript_output_dir/$BUILDSCRIPT_OUTPUT_NAME"
 
   echo "Start compile."
-  eval "$CC $BUILDSCRIPT_DIR -module-kind commonjs -main call -meta-info -libraries ""$BUILDSCRIPT_BUILD_LIB"" -output ""$buildScriptOutput"""
+  eval "$CC $BUILDSCRIPT_DIR $CC_BUILDSCRIPT_FLAGS -libraries ""$BUILDSCRIPT_BUILD_LIB"" -output ""$buildScriptOutput"""
   echo "Build script update finished."
 }
 

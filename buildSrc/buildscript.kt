@@ -1,56 +1,21 @@
-object Configuration {
-    object Development {
-        //
-        // Paths
-        //
-        val assetsSubDirectory = "static"
-        val assetsPublicPath = "/"
-        val proxyTable = mapOf<String, String>()
+import webpack.*
+import webpack.common.Files
+import webpack.common.jsObject
+import webpack.common.jsRegex
 
-        //
-        // Various Dev Server settings
-        //
-        /** can be overwritten by process.env.HOST */
-        val host = "localhost"
-        /** can be overwritten by process.env.PORT, if port is in use, a free one will be determined */
-        val port = 8080
-        val autoOpenBrowser = false
-        val errorOverlay = true
-        val notifyOnErrors = true
-        /** https://webpack.js.org/configuration/dev-server/#devserver-watchoptions- */
-        val poll = false
-
-        //
-        // Source Maps
-        //
-        /** https://webpack.js.org/configuration/devtool/#development */
-        val devtool = "cheap-module-eval-source-map"
-
-        /**
-         *  If you have problems debugging vue-files in devtools,
-         *  set this to false - it *may* help
-         *
-         *  https://vue-loader.vuejs.org/en/options.html#cachebusting
-         */
-        val cacheBusting = true
-
-        val cssSourceMap = true
-    }
-
-    object Build {
-
-    }
+fun WebpackConfigContext.assetsPathOf(location: String): String {
+    return env.path.join("assets", location)
 }
 
-suspend fun webpackBaseConfig() = WebpackConfig {
+val webpackBaseConfig = WebpackConfig {
     entry {
         name("app" to "./src/main.js")
     }
 
     output {
-        path = "aaaaaa"
+        path = env.project("dist")
         filename = "[name].js"
-        publicPath = "ccccc"
+        publicPath = "/"
     }
 
     resolve {
@@ -71,31 +36,111 @@ suspend fun webpackBaseConfig() = WebpackConfig {
         rule("url-loader", Regex("\\.(png|jpe?g|gif|svg)(\\?.*)?\$")) {
             options {
                 limit = 10000
-                name = "img/[name].[hash:7].[ext]"
+                name = assetsPathOf("img/[name].[hash:7].[ext]")
             }
         }
 
-        rule("url-loader",Regex("\\.(mp4|webm|ogg|mp3|wav|flac|aac)(\\?.*)?\$")) {
+        rule("url-loader", Regex("\\.(mp4|webm|ogg|mp3|wav|flac|aac)(\\?.*)?\$")) {
             options {
                 limit = 10000
-                name = "media/[name].[hash:7].[ext]"
+                name = assetsPathOf("media/[name].[hash:7].[ext]")
             }
         }
 
         rule("url-loader", Regex("\\.(woff2?|eot|ttf|otf)(\\?.*)?\$")) {
             options {
                 limit = 10000
-                name = "fonts/[name].[hash:7].[ext]"
+                name = assetsPathOf("fonts/[name].[hash:7].[ext]")
             }
         }
     }
-
-    node {
-        setImmediate = false
-        dgram = "empty"
-        fs = "empty"
-        net = "empty"
-        tls = "empty"
-        child_process = "empty"
-    }
 }
+
+val WebpackConfigContext.devServerConfiguration : dynamic
+    get() = jsObject {
+        it.historyApiFallback = jsObject { apiFallbackConfig ->
+            apiFallbackConfig.rewrites = arrayOf(jsObject { rewrite -> rewrite.from = jsRegex(".*"); rewrite.to = "/index.html" })
+        }
+        it.hot = true
+        it.compress = true
+        it.host = "localhost"
+        it.port = 8080
+    }
+
+val webpackConfigurations = mapOf(
+    "production" to webpackBaseConfig.merge {
+        mode("production")
+
+        module {
+            useStylesheetLoaders(sourceMap = Configuration.Build.productionSourceMap)
+        }
+
+        plugins {
+            WebpackDefinePlugin {
+                this["process.env"] = jsObject {
+                    it["mode"] = "production"
+                }
+            }
+
+            MiniCssExtractPlugin()
+
+            HtmlWebpackPlugin {
+                filename = "index.html"
+                template = "index.html"
+                inject = true
+                minifyOptions {
+                    removeComments = true
+                    collapseWhitespace = true
+                    removeAttributeQuotes = true
+                }
+                chunksSortMode = "auto"
+            }
+
+            WebpackModuleConcatenationPlugin()
+
+            CopyWebpackPlugin {
+                copy(env.project("static"), Configuration.Development.assetsSubDirectory) { !it.split(Files.pathDelimiter).last().startsWith(".") }
+            }
+        }
+
+        optimization {
+            moduleIds = "named"
+            minimize = true
+        }
+    },
+
+    "development" to webpackBaseConfig.merge {
+        developerTool(DeveloperTools.CheapModelSourceMap)
+
+        mode("development")
+
+        module {
+            useStylesheetLoaders(extractCss = false, sourceMap = Configuration.Development.cssSourceMap)
+        }
+
+        optimization {
+            chunkIds = "natural"
+        }
+
+        plugins {
+            WebpackDefinePlugin {
+                this["process.env"] = jsObject {
+                    it["mode"] = "development"
+                }
+            }
+
+            WebpackHotModuleReplacementPlugin()
+            WebpackNoEmitOnErrorPlugin()
+
+            HtmlWebpackPlugin {
+                filename = "index.html"
+                template = "index.html"
+                inject = true
+            }
+
+            CopyWebpackPlugin {
+                copy(env.project("static"), Configuration.Development.assetsSubDirectory) { !it.split(Files.pathDelimiter).last().startsWith(".") }
+            }
+        }
+    }
+)
