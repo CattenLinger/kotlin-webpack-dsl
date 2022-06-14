@@ -168,19 +168,6 @@ init_check_node_modules() {
   fi
 }
 
-init_check_dukat() {
-  if [ -z "$(command -v dukat)" ]; then
-    echo "dukat command not found."
-    yes_or_no "'dukat' is needed for webpack api conversion. install it ?" "npm i dukat"
-    if [ $? == 255 ]; then return; fi
-  fi
-
-  echo "Preparing webpack apis."
-  local webpack_api_location="$BUILDSCRIPT_DIR/webpack"
-  [ ! -d "$webpack_api_location" ] && mkdir -vp "$webpack_api_location"
-  dukat -d "$webpack_api_location" "$BUILD_ROOT/node_modules/webpack/module.d.ts"
-}
-
 init_buildscript_dependencies() {
   echo "Checking basic buildscript dependencies..."
   repository maven_central
@@ -201,7 +188,6 @@ init() {
   echo "Init checks..."
   init_check_package_json
   init_check_node_modules
-  init_check_dukat
 
   prepare_directories
   init_buildscript_dependencies
